@@ -1,0 +1,7 @@
+haskell version of limit holdem casino.
+Encoding of hands is similar to cpp version, with minor changes.
+compile with:
+ghc -O2 lasvegas.hs
+
+run with 
+./lasvegas

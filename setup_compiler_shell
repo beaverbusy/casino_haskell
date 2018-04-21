@@ -1,0 +1,2 @@
+nix-shell -p "haskellPackages.ghcWithPackages (pkgs: [pkgs.mtl pkgs.random pkgs.random-shuffle pkgs.poker-eval])"
+
