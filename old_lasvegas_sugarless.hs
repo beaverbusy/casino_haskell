@@ -1,3 +1,4 @@
+-- This is a sugarless rewrite. Will not be maintained.
 -- Todo:
 -- writefile' & readfile' failure resistent and read "f" in case of file read failure.
 -- fix bug: Pot is too small with 2 raising bots ,1 call bot 1 fold bot pot stays at 9
@@ -77,13 +78,13 @@ rotate k tb
 
 -- write starting hands to bot files Note: file of player in seat i gets card 2*i and 2*i+1 in deck
 dealCardsFile :: Int -> Int -> StateT GameState IO ()
-dealCardsFile  handNo button = do 
-        gs <- get
-        forM_ [0..kPlayers - 1] (\i -> 
-            let sh = show handNo ++ "D" ++ show button ++ "D" ++ show card1 ++ show card2
-                card1 =  (gDeck gs) !! (2 * i)     
-                card2 =  (gDeck gs) !! (2 * i + 1)
-            in  liftIO ( writeFile  ("./botfiles/casinoToBot" ++ show i) (sh)))
+dealCardsFile  handNo button = 
+        gets gDeck >>= \gs ->
+           forM_ [0..kPlayers - 1] (\i -> 
+               let sh = show handNo ++ "D" ++ show button ++ "D" ++ show card1 ++ show card2 
+                   card1 =  (gs) !! (2 * i)     
+                   card2 =  (gs) !! (2 * i + 1)
+               in  liftIO ( writeFile  ("./botfiles/casinoToBot" ++ show i) (sh)))
 
 -- start of new hand: reinitialise GameState
 
@@ -129,44 +130,44 @@ rotate' bn tb
 
 -- get bets: Int is street 0,1,2,3,4: pre, flop, turn, river, handover
 getBets :: Int -> StateT GameState IO ()
-getBets st = do
-   gs <- get 
-   let
-   -- call
-       due2 = (if st < 2 then 1 else 2) * (gRaises gs - pVpip currP)  -- ammount owed by caller multiplied by price of current round
-       currP2 = currP {pStack = pStack currP - due2, pVpip = gRaises gs}     -- update stack, and vpip of current player
-       tb2 = take currS (gTable gs) ++ currP2 : (reverse . take (kPlayers - currS - 1) . reverse $ (gTable gs))   -- upate table by adding updated current player
-       active2 = rotate 1 (gActive gs)     -- mv current player at end of table
-   -- raise                                
-       due3 = (if st < 2 then 1 else 2) * (gRaises gs + 1 - pVpip currP)  -- ammount owed by raiser, + 1 cos gs not updated yet
-       currP3 = currP {pStack = pStack currP - due3, pVpip = 1 + gRaises gs}     -- update stack, and vpip
-       tb3 = take currS (gTable gs) ++ currP3 : (reverse . take (kPlayers - currS - 1) . reverse $ gTable gs)  -- upate table by adding updated current player
-   -- fold
-       currS = head $ gActive gs -- seat of current Player to act
-       currP = gTable gs !! currS -- current player
-       tb1 = tail $ gActive gs  in -- remove folding player 
+getBets st = 
+   get >>= \gs ->
+      let
+      -- call
+          due2 = (if st < 2 then 1 else 2) * (gRaises gs - pVpip currP)  -- ammount owed by caller multiplied by price of current round
+          currP2 = currP {pStack = pStack currP - due2, pVpip = gRaises gs}     -- update stack, and vpip of current player
+          tb2 = take currS (gTable gs) ++ currP2 : (reverse . take (kPlayers - currS - 1) . reverse $ (gTable gs))   -- upate table by adding updated current player
+          active2 = rotate 1 (gActive gs)     -- mv current player at end of table
+      -- raise                                
+          due3 = (if st < 2 then 1 else 2) * (gRaises gs + 1 - pVpip currP)  -- ammount owed by raiser, + 1 cos gs not updated yet
+          currP3 = currP {pStack = pStack currP - due3, pVpip = 1 + gRaises gs}     -- update stack, and vpip
+          tb3 = take currS (gTable gs) ++ currP3 : (reverse . take (kPlayers - currS - 1) . reverse $ gTable gs)  -- upate table by adding updated current player
+      -- fold
+          currS = head $ gActive gs -- seat of current Player to act
+          currP = gTable gs !! currS -- current player
+          tb1 = tail $ gActive gs  in -- remove folding player 
 
-        -- all but one folded or hand is over
-         if ((length $ gActive gs) == 1 || st == 4) then return ()
-              -- everyone called already, end the street.
-         else if (gCalls gs == length (gActive gs)) then do
-            modify (resetPostStreet st)
-            getBets (st + 1) 
-         else  do
-              liftIO $ writeFile ("./botfiles/casinoToBot" ++ (show  currS)) (show $ gHandDesc gs)
-              liftIO $ usleep kPause   -- sleep 
-              b <- liftIO $ readFile ("./botfiles/botToCasino" ++ (show  currS))
-              case (b !! 0)   of  'c' -> do  put $ gs {gActive = active2, gTable = tb2, gHandDesc = gHandDesc gs ++ "c", gPot = due2 + gPot gs, gCalls = gCalls gs + 1}
-                                             getBets st 
-                                  'r' -> if gRaises gs == kMaxRaises then do -- a call 
-                                             put $ gs {gActive = active2, gTable = tb2, gHandDesc = gHandDesc gs ++ "c", gPot = due2 + gPot gs, gCalls = gCalls gs + 1}
-                                             getBets st 
-                                         else do
-                                             put $ gs {gActive = active2, gTable = tb3, gHandDesc = gHandDesc gs ++ "r", gPot = due3 + gPot gs  , gRaises = gRaises gs + 1, gCalls = 0}
-                                             getBets st 
-                                  _   -> do  
-                                             put $ gs {gActive = tb1, gHandDesc = gHandDesc gs ++ "f"}     -- updated hd desc with info latest move is a fold
-                                             getBets st 
+           -- all but one folded or hand is over
+            if ((length $ gActive gs) == 1 || st == 4) then return ()
+                 -- everyone called already, end the street.
+            else if (gCalls gs == length (gActive gs)) then 
+               modify (resetPostStreet st) >>
+               getBets (st + 1) 
+            else  
+                 (liftIO $ writeFile ("./botfiles/casinoToBot" ++ (show  currS)) (show $ gHandDesc gs)) >>
+                 (liftIO $ usleep kPause) >>  -- sleep 
+                 (liftIO $ readFile ("./botfiles/botToCasino" ++ (show  currS))) >>= \b ->
+                    case (b !! 0)   of  'c' ->     (put $ gs {gActive = active2, gTable = tb2, gHandDesc = gHandDesc gs ++ "c", gPot = due2 + gPot gs, gCalls = gCalls gs + 1}) >>
+                                                   getBets st 
+                                        'r' -> if gRaises gs == kMaxRaises then -- a call 
+                                                   (put $ gs {gActive = active2, gTable = tb2, gHandDesc = gHandDesc gs ++ "c", gPot = due2 + gPot gs, gCalls = gCalls gs + 1}) >>
+                                                   getBets st 
+                                               else 
+                                                   (put $ gs {gActive = active2, gTable = tb3, gHandDesc = gHandDesc gs ++ "r", gPot = due3 + gPot gs  , gRaises = gRaises gs + 1, gCalls = 0}) >>
+                                                   getBets st 
+                                        _   -> 
+                                                   (put $ gs {gActive = tb1, gHandDesc = gHandDesc gs ++ "f"}) >>     -- updated hd desc with info latest move is a fold
+                                                   getBets st 
 
 -- prepare for next street, Int codes which street just finished, 0 is pre, 1 flop, 2 turn, 
 resetPostStreet :: Int -> GameState -> GameState
@@ -201,9 +202,9 @@ showdown gs = gs'
 
 -- writes gHandDesc to file, call it after showdown
 showdownToFile ::  StateT GameState IO ()
-showdownToFile = do
-    gs <- gets gHandDesc
-    liftIO $ appendFile ("./botfiles/showdowns") (show  gs ++ "\n")
+showdownToFile = 
+    gets gHandDesc >>= \gs ->
+       liftIO $ appendFile ("./botfiles/showdowns") (show  gs ++ "\n")
 
 -- payoffs the winners, use it when there was and was not a showdown
 payoffs :: GameState ->  GameState 
@@ -215,20 +216,20 @@ payoffs gs = gs'
 
 -- main function: loops and plays hand
 oneHand :: StateT GameState IO ()
-oneHand = do
-    sDeck <- liftIO $ shuffle kDeck     -- newly shuffled deck
+oneHand = 
+    (liftIO $ shuffle kDeck) >>= \sDeck ->       -- newly shuffled deck
 -- reset table and state
-    gs0 <- modify (resetGameState sDeck) >> get -- reboot gs
--- deal cards
-    dealCardsFile (gHandNo gs0) (gButton gs0) -- writes hands, handno, button to files of each bot
- 
-    getBets 0 -- launches the betting
-    modify showdown 
-    showdownToFile 
-    liftIO $ putStrLn "End of hand, gs is:"
-    modify payoffs >> get >>= \x -> liftIO $ print x
-    liftIO $ putStrLn ""
-    oneHand 
+       modify (resetGameState sDeck) >> get >>= \gs0 -> -- reboot gs
+   -- deal cards
+          dealCardsFile (gHandNo gs0) (gButton gs0) >> -- writes hands, handno, button to files of each bot
+       
+          getBets 0 >> -- launches the betting
+          modify showdown >>
+          showdownToFile >>
+          (liftIO $ putStrLn "End of hand, gs is:") >>
+          modify payoffs >> get >>= \x -> liftIO  (print x) >>
+          (liftIO $ putStrLn "") >>
+          oneHand 
 
-main =  do
+main =  
     evalStateT oneHand kGameState

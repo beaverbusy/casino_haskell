@@ -1,7 +1,11 @@
 haskell version of limit holdem casino.
 Encoding of hands is similar to cpp version, with minor changes.
 compile with:
+set up the environment with nix by reading setup_compiler_shell
 ghc -O2 lasvegas.hs
 
 run with 
 ./lasvegas
+
+ignore the sugarless version.
+
